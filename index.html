@@ -1,1 +1,338 @@
-test
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>咖啡配豆比例計算器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #fafaf9; }
+        input[type=range] { accent-color: #78350f; height: 4px; }
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .toast { visibility: hidden; opacity: 0; transition: opacity 0.3s; }
+        .toast.show { visibility: visible; opacity: 1; }
+        .f-l { font-size: 1.25rem; line-height: 1.75rem; }    /* 20px */
+        .f-m { font-size: 1rem; line-height: 1.5rem; }       /* 16px */
+        .f-s { font-size: 0.8125rem; line-height: 1.125rem; } /* 13px */
+        .radius-main { border-radius: 1.5rem; }
+        .transition-all-200 { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="p-4 md:p-8 font-sans text-stone-900 pb-20 text-left">
+    <div class="max-w-md mx-auto space-y-6">
+        
+        <!-- 步驟 1: 規格設定 -->
+        <div class="bg-white p-6 radius-main shadow-sm border border-stone-100">
+            <input type="text" id="recipeTitle" placeholder="在此輸入配方名稱..." 
+                oninput="updateAllDisplays()"
+                class="w-full text-center f-l font-black text-stone-900 bg-transparent border-b border-stone-100 focus:border-amber-500 py-2 mb-6 outline-none transition-all">
+
+            <div class="flex justify-between items-center">
+                <div class="space-y-0.5">
+                    <h1 class="f-m font-black text-amber-900">生產規格設定</h1>
+                    <p class="f-s text-stone-400 font-bold uppercase tracking-widest">Configuration</p>
+                </div>
+                <div class="text-right bg-stone-50 p-3 rounded-2xl border border-stone-100">
+                    <p class="f-s text-stone-400 font-bold mb-1">目標重量</p>
+                    <div class="flex items-baseline justify-end gap-1">
+                        <input type="number" id="targetTotalKg" value="9" step="0.1" onchange="handleTargetChange()"
+                            class="w-16 text-right f-s font-black text-stone-900 bg-white border border-stone-200 rounded px-1 outline-none">
+                        <span class="f-s font-bold text-stone-400 uppercase">kg</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 步驟 2: 品項調配區 -->
+        <div id="itemList" class="space-y-3"></div>
+
+        <!-- 步驟 3: 自動平衡區 -->
+        <div id="fillerItemContainer"></div>
+
+        <!-- 步驟 4: 成本分析與全域失重率 -->
+        <div class="bg-amber-50 p-6 radius-main border border-amber-100/50 space-y-5">
+            <div class="flex justify-between items-center text-amber-900 font-bold">
+                <span class="f-m">總量校驗 (生豆)</span>
+                <div class="f-s font-black text-amber-950">
+                    <span id="currentTotalWeightG">0</span><span class="opacity-40 mx-0.5">g</span><span class="opacity-20 mx-1">/</span><span id="targetWeightGDisplay">0</span><span class="ml-0.5 opacity-40">g</span>
+                </div>
+            </div>
+
+            <div class="space-y-3 bg-white/50 p-4 rounded-2xl border border-amber-100">
+                <div class="flex justify-between items-center">
+                    <span class="f-s font-black text-amber-800">烘焙失重率評估</span>
+                    <div class="flex items-center gap-1">
+                        <input type="number" id="globalLossInput" value="15" step="0.5" oninput="updateGlobalLoss(this.value)"
+                            class="w-12 text-right f-s font-black text-red-600 bg-transparent outline-none">
+                        <span class="f-s font-bold text-red-300">%</span>
+                    </div>
+                </div>
+                <input type="range" id="globalLossRange" min="0" max="30" step="0.5" value="15" oninput="updateGlobalLoss(this.value)" class="w-full">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 border-t border-amber-200/30 pt-4">
+                <div class="space-y-1">
+                    <p class="f-s text-stone-400 font-bold">預估熟豆產量</p>
+                    <p class="f-s font-black text-amber-900"><span id="roastedWeightDisplay">0</span><span class="ml-1 opacity-40 font-bold uppercase">g</span></p>
+                </div>
+                <div class="space-y-1 border-l border-amber-200/30 pl-4">
+                    <p class="f-s text-stone-400 font-bold">熟豆預估單價</p>
+                    <p class="f-s font-black text-amber-900"><span id="avgPrice">0.00</span><span class="ml-1 opacity-40 font-bold tracking-tighter uppercase">NTD/kg</span></p>
+                </div>
+            </div>
+            <p class="f-s text-stone-400 font-bold pt-1 border-t border-amber-100/50">生豆總成本：<span id="totalCost" class="text-amber-950 ml-1">0</span> <span class="opacity-40 font-bold">NTD</span></p>
+        </div>
+
+        <!-- 步驟 5: 票據清單 -->
+        <div class="bg-white p-6 radius-main border border-stone-100 shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1.5 bg-stone-900"></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-2">
+                    <h4 id="listHeader" class="f-s font-black text-stone-900 uppercase tracking-tighter">📋 配方產出明細</h4>
+                    <span class="f-s text-stone-300 font-mono" id="currentTimeDisplay"></span>
+                </div>
+                <button onclick="copyRecipeToClipboard()" 
+                    class="p-2 bg-stone-100 text-stone-600 rounded-lg hover:bg-stone-200 transition-all active:scale-95 flex items-center gap-1 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                    <span class="f-s font-bold">複製</span>
+                </button>
+            </div>
+            <div id="summaryTextList" class="space-y-3 f-s font-mono text-stone-600"></div>
+            <div class="mt-8 pt-4 border-t border-dashed border-stone-100 flex justify-center opacity-30">
+                <span class="f-s font-black tracking-widest uppercase italic text-center">Master Blender Profile</span>
+            </div>
+        </div>
+
+        <!-- 虎記商行版權宣告 -->
+        <footer class="mt-12 mb-8 text-center">
+            <p class="f-s text-stone-300 font-bold tracking-widest uppercase">
+                © 虎記商行 版權所有
+            </p>
+        </footer>
+    </div>
+
+    <div id="toast" class="toast fixed bottom-8 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-8 py-3 rounded-full shadow-2xl z-50 f-s font-bold text-center">
+        ✅ 配方文字已複製
+    </div>
+
+    <script>
+        let items = [];
+        let roastLoss = 15;
+
+        function getTargetG() { return (parseFloat(document.getElementById('targetTotalKg').value) || 0) * 1000; }
+        function handleTargetChange() { updateAllDisplays(); render(); }
+        
+        function addItemFromFiller() {
+            const fw = Math.max(0, getTargetG() - items.reduce((s, i) => s + i.weight, 0));
+            if (fw > 0) {
+                items.push({ id: Date.now(), name: '', weight: fw, price: 0, isLocked: false });
+                render(); updateAllDisplays();
+            } else { 
+                items.push({ id: Date.now(), name: '', weight: 0, price: 0, isLocked: false });
+                render(); updateAllDisplays();
+            }
+        }
+
+        function deleteItem(id) { items = items.filter(i => i.id !== id); render(); updateAllDisplays(); }
+        function toggleLock(id) { const idx = items.findIndex(i => i.id === id); items[idx].isLocked = !items[idx].isLocked; render(); }
+        function updateGlobalLoss(val) { roastLoss = parseFloat(val) || 0; document.getElementById('globalLossInput').value = roastLoss; document.getElementById('globalLossRange').value = roastLoss; updateAllDisplays(); }
+
+        function updateItem(id, field, val) {
+            const idx = items.findIndex(i => i.id === id);
+            if (field === 'weight') {
+                const tg = getTargetG();
+                const lockedSum = items.filter(i => i.id !== id && i.isLocked).reduce((s, i) => s + i.weight, 0);
+                const finalVal = Math.min(Math.max(0, parseFloat(val) || 0), Math.max(0, tg - lockedSum));
+                const delta = finalVal - items[idx].weight;
+                items[idx].weight = finalVal;
+                distributeDeltaFromSource(id, delta);
+            } else { items[idx][field] = (field === 'name') ? val : (parseFloat(val) || 0); }
+            updateAllDisplays();
+        }
+
+        function updateByPercent(id, pct) { updateItem(id, 'weight', (parseFloat(pct) || 0) / 100 * getTargetG()); }
+
+        function updateFillerWeight(val) {
+            const tg = getTargetG();
+            const currentF = tg - items.reduce((s, i) => s + i.weight, 0);
+            const delta = (parseFloat(val) || 0) - currentF;
+            const unlocked = items.filter(i => !i.isLocked);
+            const sum = unlocked.reduce((s, i) => s + i.weight, 0);
+            if (sum > 0) unlocked.forEach(i => { i.weight = Math.max(0, i.weight - (delta * (i.weight / sum))); });
+            updateAllDisplays();
+        }
+
+        function distributeDeltaFromSource(sourceId, delta) {
+            const tg = getTargetG();
+            let fWeight = tg - items.reduce((s, i) => s + i.weight, 0);
+            if (fWeight < 0) {
+                let over = Math.abs(fWeight);
+                const others = items.filter(i => i.id !== sourceId && !i.isLocked && i.weight > 0);
+                const sum = others.reduce((s, i) => s + i.weight, 0);
+                if (sum > 0) others.forEach(i => { i.weight = Math.max(0, i.weight - (over * (i.weight / sum))); });
+                const finalSum = items.reduce((s, i) => s + i.weight, 0);
+                if (finalSum > tg) items[items.findIndex(i => i.id === sourceId)].weight -= (finalSum - tg);
+            }
+        }
+
+        function updateAllDisplays() {
+            const tg = getTargetG();
+            const userSum = items.reduce((s, i) => s + i.weight, 0);
+            const fw = Math.max(0, tg - userSum);
+            let totalCost = 0;
+
+            items.forEach(i => {
+                totalCost += (i.weight * (i.price / 1000));
+                const pct = tg > 0 ? ((i.weight / tg) * 100).toFixed(1) : 0;
+                ['pct-input', 'weight-num', 'price-input'].forEach(p => {
+                    const el = document.getElementById(`${p}-${i.id}`);
+                    if (el && document.activeElement !== el) {
+                        el.value = (p === 'pct-input') ? pct : (p === 'weight-num' ? Math.round(i.weight) : i.price || '');
+                    }
+                });
+                const r = document.getElementById(`weight-range-${i.id}`);
+                if (r) r.value = i.weight;
+                const pLabel = document.getElementById(`pct-label-${i.id}`);
+                if (pLabel) pLabel.innerText = pct + '%';
+            });
+
+            const roastedWeightG = tg * (1 - (roastLoss / 100));
+            document.getElementById('currentTotalWeightG').innerText = Math.round(userSum + fw).toLocaleString();
+            document.getElementById('targetWeightGDisplay').innerText = Math.round(tg).toLocaleString();
+            document.getElementById('totalCost').innerText = Math.round(totalCost).toLocaleString();
+            document.getElementById('roastedWeightDisplay').innerText = Math.round(roastedWeightG).toLocaleString();
+            document.getElementById('avgPrice').innerText = roastedWeightG > 0 ? ((totalCost / (roastedWeightG / 1000))).toFixed(2) : "0.00";
+            
+            const fr = document.getElementById('filler-range');
+            const fPctIn = document.getElementById('filler-pct-input');
+            const fPct = tg > 0 ? ((fw / tg) * 100).toFixed(1) : 0;
+            if (fr) fr.value = fw;
+            if (fPctIn && document.activeElement !== fPctIn) fPctIn.value = fPct;
+            document.getElementById('filler-weight-display').innerText = Math.round(fw);
+
+            const title = document.getElementById('recipeTitle').value.trim();
+            document.getElementById('listHeader').innerText = title ? `📋 ${title}` : '📋 配方產出明細';
+            updateSummaryList(fw, fPct, roastedWeightG);
+            document.getElementById('currentTimeDisplay').innerText = new Date().toLocaleDateString();
+        }
+
+        function updateSummaryList(fw, fp, rw) {
+            const container = document.getElementById('summaryTextList');
+            let html = '';
+            items.forEach(i => {
+                const pct = getTargetG() > 0 ? ((i.weight / getTargetG()) * 100).toFixed(1) : 0;
+                html += `<div class="flex justify-between border-b border-stone-50 pb-1">
+                    <span class="truncate pr-4 font-medium">${i.name || '未命名'}</span>
+                    <span class="flex-shrink-0 font-bold text-stone-900">${Math.round(i.weight)}g <span class="text-stone-300 ml-1">(${pct}%)</span></span>
+                </div>`;
+            });
+            if (fw > 0) html += `<div class="flex justify-between text-stone-400 italic pb-1"><span>其它豆種 (平衡)</span><span>${Math.round(fw)}g (${fp}%)</span></div>`;
+            html += `<div class="mt-4 pt-3 border-t-2 border-stone-900 space-y-1">
+                <div class="flex justify-between font-black text-stone-900"><span>預估熟豆總量</span><span>${Math.round(rw)}g</span></div>
+                <div class="flex justify-between text-amber-600 f-s"><span>設定失重率</span><span>${roastLoss}%</span></div>
+            </div>`;
+            container.innerHTML = html;
+        }
+
+        function copyRecipeToClipboard() {
+            const tg = getTargetG();
+            const title = document.getElementById('recipeTitle').value.trim() || '未命名配方';
+            const rw = document.getElementById('roastedWeightDisplay').innerText;
+            const rp = document.getElementById('avgPrice').innerText;
+            let text = `☕ 【${title}】\n🎯 生豆總重：${tg}g\n📉 失重：${roastLoss}% -> 熟豆預估：${rw}g\n----------------------------\n`;
+            items.forEach(i => {
+                const pct = tg > 0 ? ((i.weight / tg) * 100).toFixed(1) : 0;
+                text += `▪️ ${i.name || '未命名'}: ${Math.round(i.weight)}g (${pct}%)\n`;
+            });
+            text += `----------------------------\n💰 熟豆成本：${rp} NTD/kg\n(來自虎記配豆助手)`;
+            const el = document.createElement("textarea"); el.value = text; document.body.appendChild(el);
+            el.select(); document.execCommand('copy'); document.body.removeChild(el);
+            const t = document.getElementById('toast'); t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2000);
+        }
+
+        function render() {
+            const listEl = document.getElementById('itemList');
+            const tg = getTargetG();
+            listEl.innerHTML = '';
+            items.forEach((item) => {
+                const div = document.createElement('div');
+                div.className = `transition-all-200 border border-stone-100 shadow-sm ${item.isLocked ? 'bg-stone-50 p-3 rounded-xl' : 'bg-white p-5 rounded-2xl'}`;
+                if (item.isLocked) {
+                    div.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <input type="text" placeholder="豆款名稱..." value="${item.name}" oninput="updateItem(${item.id}, 'name', this.value)" class="f-s font-bold text-stone-800 bg-transparent border-none focus:ring-0 w-2/3 outline-none">
+                            <div class="flex items-center gap-3">
+                                <span id="pct-label-${item.id}" class="f-s font-black text-amber-700">${tg > 0 ? ((item.weight / tg) * 100).toFixed(1) : 0}%</span>
+                                <button onclick="toggleLock(${item.id})" class="f-s text-amber-700">🔒</button>
+                                <button onclick="deleteItem(${item.id})" class="text-stone-300 hover:text-red-400 f-s transition-colors">✕</button>
+                            </div>
+                        </div>`;
+                } else {
+                    div.innerHTML = `
+                        <div class="flex justify-between mb-4">
+                            <input type="text" placeholder="豆款名稱..." value="${item.name}" oninput="updateItem(${item.id}, 'name', this.value)" class="f-m font-bold text-stone-800 bg-transparent border-none focus:ring-0 w-2/3 outline-none">
+                            <div class="flex gap-4">
+                                <button onclick="toggleLock(${item.id})" class="f-s text-stone-300 transition-colors">🔓</button>
+                                <button onclick="deleteItem(${item.id})" class="text-stone-300 hover:text-red-400 f-s transition-colors">✕</button>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex items-center gap-3">
+                                <input type="range" id="weight-range-${item.id}" min="0" max="${tg}" step="0.1" value="${item.weight}" oninput="updateItem(${item.id}, 'weight', this.value)" class="flex-grow">
+                                <div class="flex items-center bg-stone-50 rounded-xl px-2 py-1 border border-stone-100">
+                                    <input type="number" id="pct-input-${item.id}" step="0.1" oninput="updateByPercent(${item.id}, this.value)" class="w-10 text-right f-s font-black text-stone-800 bg-transparent outline-none">
+                                    <span class="f-s text-stone-400 font-bold ml-0.5">%</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="space-y-1">
+                                    <p class="f-s text-stone-400 font-bold px-1 uppercase tracking-tighter">重量</p>
+                                    <div class="flex items-baseline bg-stone-50 rounded-xl px-3 py-2 border border-stone-100">
+                                        <input type="number" id="weight-num-${item.id}" oninput="updateItem(${item.id}, 'weight', this.value)" class="w-full f-s font-black text-stone-800 bg-transparent outline-none">
+                                        <span class="f-s text-stone-300 font-bold ml-1 uppercase">g</span>
+                                    </div>
+                                </div>
+                                <div class="space-y-1">
+                                    <p class="f-s text-stone-400 font-bold px-1 uppercase tracking-tighter">單價</p>
+                                    <div class="flex items-baseline bg-stone-50 rounded-xl px-3 py-2 border border-stone-100">
+                                        <input type="number" id="price-input-${item.id}" oninput="updateItem(${item.id}, 'price', this.value)" class="w-full f-s font-black text-stone-800 bg-transparent outline-none">
+                                        <span class="f-s text-stone-300 font-bold ml-1 tracking-tighter uppercase font-bold text-left">NTD</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                }
+                listEl.appendChild(div);
+            });
+
+            document.getElementById('fillerItemContainer').innerHTML = `
+                <div class="bg-stone-900 p-6 rounded-[1.75rem] shadow-xl space-y-5 text-white">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <div class="w-1.5 h-4 bg-amber-500 rounded-full"></div>
+                            <span class="f-m font-black text-stone-100 tracking-tight">其它豆種 (平衡)</span>
+                        </div>
+                        <div class="flex items-center bg-stone-800 rounded-xl px-3 py-1.5 border border-stone-700">
+                            <input type="number" id="filler-pct-input" step="0.1" oninput="updateFillerWeight((this.value/100)*getTargetG())" class="w-10 bg-transparent text-right f-s font-black text-amber-500 outline-none">
+                            <span class="f-s font-bold text-stone-500 ml-0.5">%</span>
+                        </div>
+                    </div>
+                    <input type="range" id="filler-range" min="0" max="${tg}" step="0.1" oninput="updateFillerWeight(this.value)" class="w-full">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-stone-800 rounded-xl px-4 py-3 flex justify-between items-center border border-stone-700">
+                            <span class="f-s font-black text-white" id="filler-weight-display">0</span>
+                            <span class="f-s text-stone-500 font-bold uppercase">g</span>
+                        </div>
+                        <button onclick="addItemFromFiller()" class="py-3 bg-amber-600 text-white rounded-xl f-s font-black shadow-lg active:scale-95 transition-all hover:bg-amber-500 px-4">
+                            ＋ 新增品項
+                        </button>
+                    </div>
+                </div>`;
+            updateAllDisplays();
+        }
+        window.onload = () => { addItemFromFiller(); };
+    </script>
+</body>
+</html>
